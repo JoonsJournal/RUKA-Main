@@ -133,7 +133,7 @@ from ruka_hand.utils.control_table.control_table import *
 
 COMM_SUCCESS = 0        # 통신 성공 코드
 PROTOCOL_VERSION = 2.0  # Dynamixel Protocol 2.0
-BAUDRATE = 2000000      # 2Mbps (고속 통신)
+BAUDRATE = 57600      # 2Mbps (고속 통신)
 
 # =============================================================================
 # 로깅 설정
@@ -1029,37 +1029,37 @@ class DynamixelClient:
             # ]
             
 			# 1. 명시적으로 Python int로 변환 (NumPy 타입 처리)
-        	value = int(value)
+            value = int(value)
         
-        	# 2. size에 맞게 바이트 배열 생성
-        	if size == 1:
-            	# 1바이트: Operating Mode, Temperature Limit 등
-            	data = [
-                	self.dxl.DXL_LOBYTE(value)
-            	]
-        	elif size == 2:
-            	# 2바이트: Current Limit, PID Gains 등
-            	data = [
-                	self.dxl.DXL_LOBYTE(value),
-                	self.dxl.DXL_HIBYTE(value)
-            	]
-        	elif size == 4:
-            	# 4바이트: Goal Position, Goal Velocity 등
-            	data = [
-                	self.dxl.DXL_LOBYTE(self.dxl.DXL_LOWORD(value)),
-                	self.dxl.DXL_HIBYTE(self.dxl.DXL_LOWORD(value)),
-                	self.dxl.DXL_LOBYTE(self.dxl.DXL_HIWORD(value)),
-                	self.dxl.DXL_HIBYTE(self.dxl.DXL_HIWORD(value))
-            	]
-        	else:
-            	# 예외 처리 (8바이트 등 비정상적인 경우)
-            	print(f"    ⚠️ 경고: 지원하지 않는 size={size}")
-            	data = [self.dxl.DXL_LOBYTE(value)]
+            # 2. size에 맞게 바이트 배열 생성
+            if size == 1:
+                # 1바이트: Operating Mode, Temperature Limit 등
+                data = [
+                    self.dxl.DXL_LOBYTE(value)
+                ]
+            elif size == 2:
+                # 2바이트: Current Limit, PID Gains 등
+                data = [
+                    self.dxl.DXL_LOBYTE(value),
+                    self.dxl.DXL_HIBYTE(value)
+                ]
+            elif size == 4:
+                # 4바이트: Goal Position, Goal Velocity 등
+                data = [
+                    self.dxl.DXL_LOBYTE(self.dxl.DXL_LOWORD(value)),
+                    self.dxl.DXL_HIBYTE(self.dxl.DXL_LOWORD(value)),
+                    self.dxl.DXL_LOBYTE(self.dxl.DXL_HIWORD(value)),
+                    self.dxl.DXL_HIBYTE(self.dxl.DXL_HIWORD(value))
+                ]
+            else:
+                # 예외 처리 (8바이트 등 비정상적인 경우)
+                print(f"    ⚠️ 경고: 지원하지 않는 size={size}")
+                data = [self.dxl.DXL_LOBYTE(value)]
 			
             # 파라미터 추가
             success = sync_writer.addParam(motor_id, data)
             if not success:
-				print(f"      ✗ addParam 실패: motor_id={motor_id}, size={size}")
+                print(f"      ✗ addParam 실패: motor_id={motor_id}, size={size}")
                 errored_ids.append(motor_id)
         
         # 파라미터 추가 실패 로깅

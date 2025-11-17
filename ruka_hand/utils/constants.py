@@ -12,7 +12,7 @@ FINGER_NAMES_TO_MANUS_IDS = {"Thumb": 0, "Index": 1, "Middle": 2, "Ring": 3, "Pi
 MOTOR_RANGES_LEFT = [724, 600, 563, 1230, 930, 1240, 930, 1000, 1270, 1100, 1100]
 MOTOR_RANGES_RIGHT = [900, 600, 563, 1430, 930, 1340, 1058, 1000, 1270, 1200, 1300]
 # 오른손만 COM5에 연결된 경우 (Windows)
-USB_PORTS = {"left": "COM1", "right": "COM5"}  # left는 사용하지 않더라도 키는 존재해야 함
+USB_PORTS = {"left": "COM1", "right": "COM6"}  # left는 사용하지 않더라도 키는 존재해야 함
 
 # Controller constants
 HOST = "127.0.0.1"
