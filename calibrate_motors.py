@@ -97,12 +97,12 @@ from ruka_hand.utils.file_ops import get_repo_root  # 프로젝트 루트 경로
     │     └─ 저수준 하드웨어 인터페이스
     │
     └─► 표준 라이브러리
-          ├─ os: 파일 시스템 조작
-          ├─ sys: 시스템 입출력
-          ├─ time: 타이밍 제어
-          ├─ msvcrt: Windows 키보드 입력 (Windows 전용)
-          ├─ numpy: 수치 연산 및 데이터 저장
-          └─ argparse: 명령줄 인자 파싱
+            ├─ os: 파일 시스템 조작
+            ├─ sys: 시스템 입출력
+            ├─ time: 타이밍 제어
+            ├─ msvcrt: Windows 키보드 입력 (Windows 전용)
+            ├─ numpy: 수치 연산 및 데이터 저장
+            └─ argparse: 명령줄 인자 파싱
 
 데이터 흐름:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
