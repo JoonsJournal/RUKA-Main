@@ -298,21 +298,13 @@ class HandDetector:
         # =====================================================================
         # MediaPipe는 RGB 이미지를 사용하므로 변환 필요
         # OpenCV는 기본적으로 BGR 포맷 사용
-        try:
-            imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        except Exception as e:
-            print(f"[ERROR] 이미지 변환 실패: {e}")
-            return [], img
+        imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
         # =====================================================================
         # 2단계: MediaPipe로 손 검출
         # =====================================================================
         # process(): 이미지에서 손 검출 및 랜드마크 추출
-        try:
-            self.results = self.hands.process(imgRGB)
-        except Exception as e:
-            print(f"[ERROR] MediaPipe 손 검출 실패: {e}")
-            return [], img
+        self.results = self.hands.process(imgRGB)
         
         # 검출된 모든 손의 정보를 저장할 리스트
         allHands = []
@@ -386,17 +378,14 @@ class HandDetector:
                 # 3.5 손 타입 판별 (Left/Right)
                 # =============================================================
                 if flipType:
-                    # flipType=True: 거울 모드 (화면 좌우 반전)
-                    # 화면이 반전되었으므로, MediaPipe 판단과 실제 손이 반대
-                    # MediaPipe가 "Right"라고 판단 → 화면상 오른쪽 → 실제로는 왼손
-                    # MediaPipe가 "Left"라고 판단 → 화면상 왼쪽 → 실제로는 오른손
+                    # flipType=True: 거울 모드
+                    # MediaPipe가 "Right"라고 판단하면 실제로는 오른손
                     if handType.classification[0].label == "Right":
-                        myHand["type"] = "Left"   # 수정: Right → Left
+                        myHand["type"] = "Right"
                     else:
-                        myHand["type"] = "Right"  # 수정: Left → Right
+                        myHand["type"] = "Left"
                 else:
                     # flipType=False: 원본 그대로
-                    # MediaPipe 판단을 그대로 사용
                     myHand["type"] = handType.classification[0].label
                 
                 # 손 정보를 전체 리스트에 추가
@@ -492,17 +481,8 @@ class HandDetector:
         fingers = []
         
         # 손 타입과 랜드마크 가져오기
-        try:
-            myHandType = myHand["type"]      # "Left" or "Right"
-            myLmList = myHand["lmList"]      # 21개 랜드마크 좌표
-        except (KeyError, TypeError) as e:
-            print(f"[ERROR] 손 정보 형식 오류: {e}")
-            return []
-        
-        # 랜드마크가 충분한지 확인
-        if len(myLmList) < 21:
-            print(f"[WARNING] 랜드마크 개수 부족: {len(myLmList)}/21")
-            return []
+        myHandType = myHand["type"]      # "Left" or "Right"
+        myLmList = myHand["lmList"]      # 21개 랜드마크 좌표
         
         # 손이 검출된 경우만 처리
         if self.results.multi_hand_landmarks:
@@ -793,62 +773,6 @@ class HandDetector:
             cv2.circle(img, (cx, cy), scale, color, cv2.FILLED)
         
         return length, info, img
-    
-    def cleanup(self):
-        """
-        MediaPipe 리소스 정리 메서드
-        
-        MediaPipe Hands 객체를 명시적으로 닫아 리소스를 해제합니다.
-        프로그램 종료 전이나 HandDetector 사용을 마친 후 호출하세요.
-        
-        사용 예시:
-        --------
-        detector = HandDetector()
-        # ... 손 추적 작업 ...
-        detector.cleanup()  # 리소스 정리
-        """
-        try:
-            if hasattr(self, 'hands') and self.hands:
-                self.hands.close()
-                print("[INFO] MediaPipe Hands 리소스 정리 완료")
-        except Exception as e:
-            print(f"[WARNING] MediaPipe 리소스 정리 중 오류: {e}")
-    
-    def __del__(self):
-        """
-        객체 소멸 시 자동으로 리소스 정리
-        
-        HandDetector 객체가 가비지 컬렉션될 때
-        자동으로 MediaPipe 리소스를 정리합니다.
-        
-        주의사항:
-        --------
-        - 소멸 시점을 정확히 예측할 수 없음
-        - 명시적 cleanup() 호출 권장
-        """
-        self.cleanup()
-    
-    def __enter__(self):
-        """
-        Context Manager 진입 (with 구문 지원)
-        
-        사용 예시:
-        --------
-        with HandDetector() as detector:
-            # 손 추적 작업
-            hands, img = detector.findHands(img)
-        # 자동으로 cleanup() 호출됨
-        """
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Context Manager 종료
-        
-        with 구문 종료 시 자동으로 리소스 정리
-        """
-        self.cleanup()
-        return False  # 예외를 전파하지 않음
 
 # =============================================================================
 # 테스트 메인 함수
