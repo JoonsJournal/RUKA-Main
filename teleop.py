@@ -2,16 +2,16 @@ import argparse
 
 from ruka_hand.teleoperation.manus_teleoperator import ManusTeleoperator
 from ruka_hand.teleoperation.oculus_teleoperator import OculusTeleoperator
-from ruka_hand.teleoperation.webcam_teleoperator import WebCamTeleoperator  # 웹캠 텔레오퍼레이터 추가
+from ruka_hand.teleoperation.webcam_teleoperator import WebCamTeleoperator
 from ruka_hand.utils.constants import HOST, OCULUS_LEFT_PORT, OCULUS_RIGHT_PORT
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Teleop robot hands.")
 	parser.add_argument(
 		"-ht",
-		"–hand_type",
+		"--hand_type",  # 수정: en dash를 올바른 하이픈으로 변경
 		type=str,
-		help="Hand you’d like to teleoperate",
+		help="Hand you'd like to teleoperate",
 		default="",
 	)
 
