@@ -45,35 +45,12 @@ python calibrate_motors.py -ht right -m tension
 import os        # 파일 경로 조작, 디렉토리 생성
 import sys       # 시스템 입출력 제어
 import time      # 시간 지연 및 타이밍 제어
-import logging   # ← 추가 (251121)
 
 import numpy as np  # 배열 연산 및 데이터 저장
 
 # RUKA 프로젝트 모듈 임포트
 from ruka_hand.control.hand import *            # Hand 클래스: 로봇 손 제어
 from ruka_hand.utils.file_ops import get_repo_root  # 프로젝트 루트 경로
-
-# =============================================================================
-# 통신 안정성 설정 (추가) (251121)
-# =============================================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
-# 통신 안정성 상수
-MAX_COMM_RETRIES = 3           # 통신 실패 시 최대 재시도 횟수
-COMM_RETRY_DELAY = 0.05        # 재시도 사이 대기 시간 (50ms)
-COMMAND_DELAY = 0.1            # 명령 사이 기본 대기 시간 (100ms)
-RECONNECT_DELAY = 1.0          # 재연결 시도 사이 대기 시간 (1초)
-MAX_RECONNECT_ATTEMPTS = 5     # 최대 재연결 시도 횟수
-
-# Profile Velocity/Acceleration 안전 설정값
-SAFE_PROFILE_VELOCITY = 150    # 안전한 프로파일 속도
-SAFE_PROFILE_ACCELERATION = 80 # 안전한 프로파일 가속도
-# =============================================================================
-
 
 # Windows 키보드 입력용 (get_key() 함수 내부에서 import)
 # import msvcrt
@@ -261,169 +238,6 @@ def get_key():
     # 일반 키 - UTF-8 디코딩
     return ch.decode('utf-8', errors='ignore')
 
-# =============================================================================
-# (추가) (251121)
-# =============================================================================
-class RobustHandController:
-    """
-    통신 안정성이 강화된 Hand 제어 래퍼 클래스
-    
-    기존 Hand 클래스를 감싸서 다음 기능을 추가합니다:
-    1. 자동 재시도 메커니즘
-    2. 통신 끊김 감지 및 자동 재연결
-    3. 에러 로깅 및 진단
-    4. 안전한 명령 실행
-    """
-    
-    def __init__(self, hand, hand_type):
-        self.hand = hand
-        self.hand_type = hand_type
-        self.max_retries = MAX_COMM_RETRIES
-        self.retry_delay = COMM_RETRY_DELAY
-        self.is_connected = True
-        logging.info(f"RobustHandController 초기화 완료 (hand_type={hand_type})")
-    
-    def robust_read_pos(self):
-        """재시도 메커니즘이 있는 위치 읽기"""
-        for attempt in range(self.max_retries):
-            try:
-                positions = self.hand.read_pos()
-                if positions is not None and len(positions) > 0:
-                    return positions
-            except Exception as e:
-                logging.warning(f"위치 읽기 실패 (시도 {attempt+1}/{self.max_retries}): {e}")
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
-                else:
-                    raise Exception(f"위치 읽기 최종 실패: {e}")
-        raise Exception("위치 읽기 실패 (알 수 없는 오류)")
-    
-    def robust_read_single_cur(self, motor_id):
-        """재시도 메커니즘이 있는 단일 모터 전류 읽기"""
-        for attempt in range(self.max_retries):
-            try:
-                current = self.hand.read_single_cur(motor_id)
-                if current is not None:
-                    return current
-            except Exception as e:
-                logging.warning(f"모터 {motor_id} 전류 읽기 실패 (시도 {attempt+1}/{self.max_retries}): {e}")
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
-                else:
-                    raise Exception(f"모터 {motor_id} 전류 읽기 최종 실패: {e}")
-        raise Exception(f"모터 {motor_id} 전류 읽기 실패")
-    
-    def robust_set_pos(self, positions):
-        """재시도 메커니즘이 있는 위치 명령"""
-        for attempt in range(self.max_retries):
-            try:
-                self.hand.set_pos(positions)
-                time.sleep(COMMAND_DELAY)  # 명령 후 대기
-                return True
-            except Exception as e:
-                logging.warning(f"위치 명령 실패 (시도 {attempt+1}/{self.max_retries}): {e}")
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
-                else:
-                    raise Exception(f"위치 명령 최종 실패: {e}")
-        raise Exception("위치 명령 실패")
-    
-    def reconnect(self):
-        """통신 재연결 시도"""
-        logging.info("\n통신 끊김 감지. 재연결 시도 중...")
-        
-        for attempt in range(MAX_RECONNECT_ATTEMPTS):
-            try:
-                logging.info(f"재연결 시도 {attempt + 1}/{MAX_RECONNECT_ATTEMPTS}...")
-                
-                # 기존 연결 종료 시도
-                try:
-                    self.hand.close()
-                except:
-                    pass
-                
-                time.sleep(RECONNECT_DELAY)
-                
-                # 새로운 Hand 객체 생성
-                logging.info("새로운 Hand 객체 생성 중...")
-                self.hand = Hand(hand_type=self.hand_type)
-                
-                # 연결 테스트
-                test_pos = self.hand.read_pos()
-                if test_pos is not None and len(test_pos) > 0:
-                    logging.info("✓ 재연결 성공!")
-                    self.is_connected = True
-                    return True
-                    
-            except Exception as e:
-                logging.warning(f"재연결 실패 (시도 {attempt+1}): {e}")
-                if attempt == MAX_RECONNECT_ATTEMPTS - 1:
-                    logging.error("✗ 재연결 최종 실패")
-                    self.is_connected = False
-                    return False
-        
-        return False
-    
-    def safe_execute(self, func, *args, **kwargs):
-        """안전한 함수 실행 (통신 끊김 시 자동 재연결)"""
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logging.error(f"함수 실행 중 오류 발생: {e}")
-            
-            # 재연결 시도
-            if not self.is_connected or "timeout" in str(e).lower() or "connection" in str(e).lower():
-                if self.reconnect():
-                    logging.info("재연결 후 함수 재실행...")
-                    return func(*args, **kwargs)
-            
-            raise
-    
-    def close(self):
-        """안전한 종료"""
-        try:
-            self.hand.close()
-            logging.info("Hand 연결 종료 완료")
-        except Exception as e:
-            logging.warning(f"Hand 종료 중 오류: {e}")
-
-
-def diagnose_communication(hand, motor_ids):
-    """통신 상태 진단 함수"""
-    logging.info("\n통신 상태 진단 시작...")
-    
-    total_attempts = 0
-    successful_attempts = 0
-    errors = []
-    
-    # 각 모터에 대해 10회씩 읽기 테스트
-    for motor_id in motor_ids:
-        for i in range(10):
-            total_attempts += 1
-            try:
-                pos = hand.read_pos()
-                if pos is not None and len(pos) > motor_id - 1:
-                    successful_attempts += 1
-            except Exception as e:
-                errors.append((motor_id, str(e)))
-    
-    success_rate = (successful_attempts / total_attempts * 100) if total_attempts > 0 else 0
-    
-    logging.info(f"진단 완료:")
-    logging.info(f"  - 총 시도: {total_attempts}")
-    logging.info(f"  - 성공: {successful_attempts}")
-    logging.info(f"  - 실패: {len(errors)}")
-    logging.info(f"  - 성공률: {success_rate:.2f}%")
-    
-    if success_rate < 95:
-        logging.warning("⚠️ 통신이 불안정합니다. 하드웨어 점검을 권장합니다.")
-    else:
-        logging.info("✓ 통신 상태 양호")
-    
-    return success_rate, len(errors)
-
-# =============================================================================
-
 
 # =============================================================================
 # HandCalibrator 클래스
@@ -437,18 +251,18 @@ class HandCalibrator:
     
     주요 기능:
     1. Curl Limits 자동 측정
-        - 이진 탐색 알고리즘 사용
-        - 전류 제한값 감지로 최대 구부림 위치 찾기
-        - 모터 과부하 방지
-
+       - 이진 탐색 알고리즘 사용
+       - 전류 제한값 감지로 최대 구부림 위치 찾기
+       - 모터 과부하 방지
+    
     2. Tension Limits 대화형 조정
-        - Curl 위치에서 일정 거리 떨어진 초기값 계산
-        - 사용자가 화살표 키로 미세 조정
-        - 각 모터별 개별 최적화
-
+       - Curl 위치에서 일정 거리 떨어진 초기값 계산
+       - 사용자가 화살표 키로 미세 조정
+       - 각 모터별 개별 최적화
+    
     3. 양손 지원
-        - 오른손: 모터 값 증가 = 손가락 구부림
-        - 왼손: 모터 값 감소 = 손가락 구부림 (미러)
+       - 오른손: 모터 값 증가 = 손가락 구부림
+       - 왼손: 모터 값 감소 = 손가락 구부림 (미러)
     
     캘리브레이션 필요성:
     - 텐던 장력이 제작마다 다름
@@ -464,105 +278,7 @@ class HandCalibrator:
         curled_path (str): curl_limits.npy 파일 경로
         tension_path (str): tension_limits.npy 파일 경로
     """
-
     
-    # def __init__(
-    #     self,
-    #     data_save_dir,
-    #     hand_type,
-    #     curr_lim=50,
-    #     testing=False,
-    #     motor_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    # ):
-    #     """
-    #     HandCalibrator 초기화 메서드
-        
-    #     Args:
-    #         data_save_dir (str): 캘리브레이션 데이터를 저장할 디렉토리 경로
-    #         hand_type (str): 핸드 타입 ("right" 또는 "left")
-    #         curr_lim (int, optional): 전류 제한값 (mA). 기본값 50mA.
-    #                                     이 값에 도달하면 최대 구부림으로 판단
-    #         testing (bool, optional): 디버그 출력 활성화. 기본값 False.
-    #                                     True시 상세한 진행 정보 출력
-    #         motor_ids (list, optional): 캘리브레이션할 모터 ID 리스트.
-    #                                     기본값 [1, 2, ..., 11]
-        
-    #     초기화 과정:
-    #     1. Hand 객체 생성
-    #         - Dynamixel 모터 연결
-    #         - 모터 설정 (Operating Mode, PID, Limits)
-    #         - Torque Enable
-        
-    #     2. 캘리브레이션 파라미터 설정
-    #         - 전류 제한값 (curr_lim)
-    #         - 테스트 모드 플래그 (testing)
-    #         - 대상 모터 ID 리스트 (motor_ids)
-        
-    #     3. 파일 경로 설정
-    #         - 저장 디렉토리 (data_save_dir)
-    #         - curl_limits.npy 경로
-    #         - tension_limits.npy 경로
-        
-    #     특수 모터 전류 제한:
-    #     - 모터 4번 (검지 MCP): 250mA (더 큰 힘 필요)
-    #     - 모터 5번 (검지 PIP): 200mA
-    #     - 기타 모터: 50mA (기본값)
-        
-    #     예외 처리:
-    #     - Hand 초기화 실패 시 프로그램 종료
-    #     - 시리얼 포트 연결 오류
-    #     - 캘리브레이션 파일 없음 (자동 생성)
-    #     """
-    #     print("\n" + "="*70)
-    #     print("RUKA Robot Hand Motor Calibration")
-    #     print("로봇 손 모터 캘리브레이션 프로그램")
-    #     print("="*70)
-    #     print(f"\n[초기화 시작]")
-    #     print(f"  손 종류: {hand_type.upper()}")
-    #     print(f"  전류 제한: {curr_lim} mA")
-    #     print(f"  테스트 모드: {'활성화' if testing else '비활성화'}")
-    #     print(f"  대상 모터: {len(motor_ids)}개 (ID: {motor_ids})")
-        
-    #     try:
-    #         # Hand 클래스 인스턴스 생성
-    #         # hand.py의 __init__() 메서드 실행
-    #         print(f"\n  → Hand 클래스 초기화 중...")
-    #         self.hand = Hand(hand_type)
-    #         print(f"  ✓ Hand 클래스 초기화 완료")
-    #         print(f"  ✓ Dynamixel 모터 연결 완료 (11개 모터)")
-    #         print(f"  ✓ 모터 토크 활성화 완료")
-            
-    #     except Exception as e:
-    #         print(f"\n✗ Hand 클래스 초기화 실패!")
-    #         print(f"  에러: {e}")
-    #         print(f"\n가능한 원인:")
-    #         print(f"  1. USB 케이블이 연결되지 않음")
-    #         print(f"  2. 로봇 손 전원이 꺼져 있음")
-    #         print(f"  3. 시리얼 포트 권한 부족")
-    #         print(f"  4. 다른 프로그램에서 포트 사용 중")
-    #         raise
-        
-    #     # 캘리브레이션 파라미터 저장
-    #     self.curr_lim = curr_lim
-    #     self.testing = testing
-    #     self.motor_ids = motor_ids
-    #     self.data_save_dir = data_save_dir
-        
-    #     # 저장 경로 설정
-    #     # 예: curl_limits/right_curl_limits.npy
-    #     self.curled_path = os.path.join(
-    #         self.data_save_dir, f"{hand_type}_curl_limits.npy"
-    #     )
-    #     # 예: curl_limits/right_tension_limits.npy
-    #     self.tension_path = os.path.join(
-    #         self.data_save_dir, f"{hand_type}_tension_limits.npy"
-    #     )
-        
-    #     print(f"\n  저장 디렉토리: {data_save_dir}")
-    #     print(f"  Curl 파일: {os.path.basename(self.curled_path)}")
-    #     print(f"  Tension 파일: {os.path.basename(self.tension_path)}")
-    #     print(f"\n[초기화 완료]")
-
     def __init__(
         self,
         data_save_dir,
@@ -571,84 +287,95 @@ class HandCalibrator:
         testing=False,
         motor_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     ):
-        logging.info(f"\n{'='*70}")
-        logging.info(f"HandCalibrator 초기화 시작")
-        logging.info(f"{'='*70}")
+        """
+        HandCalibrator 초기화 메서드
         
-        # Hand 객체 생성
+        Args:
+            data_save_dir (str): 캘리브레이션 데이터를 저장할 디렉토리 경로
+            hand_type (str): 핸드 타입 ("right" 또는 "left")
+            curr_lim (int, optional): 전류 제한값 (mA). 기본값 50mA.
+                                     이 값에 도달하면 최대 구부림으로 판단
+            testing (bool, optional): 디버그 출력 활성화. 기본값 False.
+                                     True시 상세한 진행 정보 출력
+            motor_ids (list, optional): 캘리브레이션할 모터 ID 리스트.
+                                       기본값 [1, 2, ..., 11]
+        
+        초기화 과정:
+        1. Hand 객체 생성
+           - Dynamixel 모터 연결
+           - 모터 설정 (Operating Mode, PID, Limits)
+           - Torque Enable
+        
+        2. 캘리브레이션 파라미터 설정
+           - 전류 제한값 (curr_lim)
+           - 테스트 모드 플래그 (testing)
+           - 대상 모터 ID 리스트 (motor_ids)
+        
+        3. 파일 경로 설정
+           - 저장 디렉토리 (data_save_dir)
+           - curl_limits.npy 경로
+           - tension_limits.npy 경로
+        
+        특수 모터 전류 제한:
+        - 모터 4번 (검지 MCP): 250mA (더 큰 힘 필요)
+        - 모터 5번 (검지 PIP): 200mA
+        - 기타 모터: 50mA (기본값)
+        
+        예외 처리:
+        - Hand 초기화 실패 시 프로그램 종료
+        - 시리얼 포트 연결 오류
+        - 캘리브레이션 파일 없음 (자동 생성)
+        """
+        print("\n" + "="*70)
+        print("RUKA Robot Hand Motor Calibration")
+        print("로봇 손 모터 캘리브레이션 프로그램")
+        print("="*70)
+        print(f"\n[초기화 시작]")
+        print(f"  손 종류: {hand_type.upper()}")
+        print(f"  전류 제한: {curr_lim} mA")
+        print(f"  테스트 모드: {'활성화' if testing else '비활성화'}")
+        print(f"  대상 모터: {len(motor_ids)}개 (ID: {motor_ids})")
+        
         try:
-            logging.info("\n[1/5] Hand 객체 생성 중...")
-            base_hand = Hand(hand_type=hand_type)
-            logging.info("  ✓ Hand 객체 생성 완료")
-            
-            # RobustHandController로 래핑
-            logging.info("\n[2/5] RobustHandController 래핑 중...")
-            self.hand = RobustHandController(base_hand, hand_type)
-            logging.info("  ✓ 통신 안정성 강화 완료")
+            # Hand 클래스 인스턴스 생성
+            # hand.py의 __init__() 메서드 실행
+            print(f"\n  → Hand 클래스 초기화 중...")
+            self.hand = Hand(hand_type)
+            print(f"  ✓ Hand 클래스 초기화 완료")
+            print(f"  ✓ Dynamixel 모터 연결 완료 (11개 모터)")
+            print(f"  ✓ 모터 토크 활성화 완료")
             
         except Exception as e:
-            logging.error(f"  ✗ Hand 초기화 실패: {e}")
+            print(f"\n✗ Hand 클래스 초기화 실패!")
+            print(f"  에러: {e}")
+            print(f"\n가능한 원인:")
+            print(f"  1. USB 케이블이 연결되지 않음")
+            print(f"  2. 로봇 손 전원이 꺼져 있음")
+            print(f"  3. 시리얼 포트 권한 부족")
+            print(f"  4. 다른 프로그램에서 포트 사용 중")
             raise
         
-        # 속성 저장
+        # 캘리브레이션 파라미터 저장
         self.curr_lim = curr_lim
         self.testing = testing
         self.motor_ids = motor_ids
         self.data_save_dir = data_save_dir
         
-        # 파일 경로 설정
-        logging.info("\n[3/5] 파일 경로 설정 중...")
-        self.curled_path = f"{data_save_dir}/{hand_type}_curl_limits.npy"
-        self.tension_path = f"{data_save_dir}/{hand_type}_tension_limits.npy"
-        
-        # 통신 상태 진단
-        logging.info("\n[4/5] 통신 상태 진단 중...")
-        success_rate, error_count = diagnose_communication(
-            self.hand.hand, self.motor_ids
+        # 저장 경로 설정
+        # 예: curl_limits/right_curl_limits.npy
+        self.curled_path = os.path.join(
+            self.data_save_dir, f"{hand_type}_curl_limits.npy"
+        )
+        # 예: curl_limits/right_tension_limits.npy
+        self.tension_path = os.path.join(
+            self.data_save_dir, f"{hand_type}_tension_limits.npy"
         )
         
-        if success_rate < 90:
-            logging.warning("\n⚠️ 통신 상태가 불안정합니다.")
-            user_input = input("\n계속 진행하시겠습니까? (y/n): ")
-            if user_input.lower() != 'y':
-                raise Exception("사용자가 캘리브레이션을 중단했습니다.")
-        
-        # Profile Velocity 및 Acceleration 안전 설정
-        logging.info("\n[5/5] 모터 프로파일 안전 설정 중...")
-        try:
-            # control_table에서 import 필요
-            from ruka_hand.utils.control_table.control_table import (
-                ADDR_PROFILE_VELOCITY, LEN_PROFILE_VELOCITY,
-                ADDR_PROFILE_ACCELERATION, LEN_PROFILE_ACCELERATION
-            )
-            
-            for motor_id in self.motor_ids:
-                # Profile Velocity 설정 (속도 제한)
-                self.hand.hand.dxl_client.write(
-                    motor_id, 
-                    ADDR_PROFILE_VELOCITY, 
-                    SAFE_PROFILE_VELOCITY, 
-                    LEN_PROFILE_VELOCITY
-                )
-                time.sleep(0.05)
-                
-                # Profile Acceleration 설정 (가속도 제한)
-                self.hand.hand.dxl_client.write(
-                    motor_id, 
-                    ADDR_PROFILE_ACCELERATION, 
-                    SAFE_PROFILE_ACCELERATION, 
-                    LEN_PROFILE_ACCELERATION
-                )
-                time.sleep(0.05)
-                
-                logging.info(f"  모터 {motor_id}: Vel={SAFE_PROFILE_VELOCITY}, Acc={SAFE_PROFILE_ACCELERATION}")
-        
-        except Exception as e:
-            logging.warning(f"  ⚠️ 프로파일 설정 실패: {e}")
-        
-        logging.info(f"\n{'='*70}")
-        logging.info(f"HandCalibrator 초기화 완료")
-        logging.info(f"{'='*70}\n")
+        print(f"\n  저장 디렉토리: {data_save_dir}")
+        print(f"  Curl 파일: {os.path.basename(self.curled_path)}")
+        print(f"  Tension 파일: {os.path.basename(self.tension_path)}")
+        print(f"\n[초기화 완료]")
+
     
     def _safe_read_pos(self):
         """
@@ -657,12 +384,10 @@ class HandCalibrator:
         hand.read_pos()가 반환하는 값의 타입이 불확실하므로
         안전하게 int32로 변환합니다.
         
-        재시도 메커니즘이 적용된 robust_read_pos()를 사용합니다.
-        
         Returns:
             np.ndarray: int32 타입의 위치 배열
         """
-        pos = self.hand.robust_read_pos()
+        pos = self.hand.read_pos()
         
         # 리스트나 배열을 int32로 변환
         if isinstance(pos, (list, tuple)):
@@ -679,7 +404,6 @@ class HandCalibrator:
         안전하게 모터 위치를 설정
         
         NumPy 배열을 int 리스트로 변환하여 전달합니다.
-        재시도 메커니즘이 적용된 robust_set_pos()를 사용합니다.
         
         Args:
             pos: 위치 배열 또는 리스트
@@ -687,9 +411,9 @@ class HandCalibrator:
         if isinstance(pos, np.ndarray):
             # NumPy 배열을 Python int 리스트로 변환
             pos_list = [int(x) for x in pos]
-            self.hand.robust_set_pos(pos_list)
+            self.hand.set_pos(pos_list)
         else:
-            self.hand.robust_set_pos(pos)
+            self.hand.set_pos(pos)
 
 
     def find_bound(self, motor_id):
@@ -708,28 +432,28 @@ class HandCalibrator:
         알고리즘 동작 원리:
         
         1. 초기 설정
-            - 탐색 범위: [100, 4000] (안전 마진 포함)
-            - 시작 위치: 오른손 100, 왼손 4000
-            - 방향 계수: 오른손 +1, 왼손 -1
+           - 탐색 범위: [100, 4000] (안전 마진 포함)
+           - 시작 위치: 오른손 100, 왼손 4000
+           - 방향 계수: 오른손 +1, 왼손 -1
         
         2. 이진 탐색 루프
-            while (탐색 범위 > 10) or (전류 < 제한값):
-                a) 중간 위치 계산: com_pos = (상한 + 하한) / 2
-                b) 모터를 com_pos로 이동
-                c) 안정화 대기 (2~5초)
-                d) 현재 전류 측정
-                e) 실제 도달 위치 읽기
-                
-                if 전류 < 제한값:  # 아직 더 구부릴 수 있음
-                    오른손: 하한 = 현재위치 + 1
-                    왼손: 상한 = 현재위치 - 1
-                else:  # 전류 제한 도달, 너무 구부렸음
-                    오른손: 상한 = 현재위치 + 1
-                    왼손: 하한 = 현재위치 - 1
+           while (탐색 범위 > 10) or (전류 < 제한값):
+               a) 중간 위치 계산: com_pos = (상한 + 하한) / 2
+               b) 모터를 com_pos로 이동
+               c) 안정화 대기 (2~5초)
+               d) 현재 전류 측정
+               e) 실제 도달 위치 읽기
+               
+               if 전류 < 제한값:  # 아직 더 구부릴 수 있음
+                   오른손: 하한 = 현재위치 + 1
+                   왼손: 상한 = 현재위치 - 1
+               else:  # 전류 제한 도달, 너무 구부렸음
+                   오른손: 상한 = 현재위치 + 1
+                   왼손: 하한 = 현재위치 - 1
         
         3. 수렴 조건
-            - 탐색 범위가 10 이하로 좁아지고
-            - 동시에 전류가 제한값 이하
+           - 탐색 범위가 10 이하로 좁아지고
+           - 동시에 전류가 제한값 이하
         
         특수 모터 처리:
         - 모터 4번 (검지 MCP): curr_lim = 250mA, 대기시간 5초
@@ -742,19 +466,19 @@ class HandCalibrator:
             초기: l_bound=100, u_bound=4000
             
             반복 1: com_pos=2050 → cur=30mA < 50mA
-                    → 더 구부릴 수 있음 → l_bound=2051
+                   → 더 구부릴 수 있음 → l_bound=2051
             
             반복 2: com_pos=3025 → cur=35mA < 50mA
-                    → 더 구부릴 수 있음 → l_bound=3026
+                   → 더 구부릴 수 있음 → l_bound=3026
             
             반복 3: com_pos=3513 → cur=48mA < 50mA
-                    → 더 구부릴 수 있음 → l_bound=3514
+                   → 더 구부릴 수 있음 → l_bound=3514
             
             반복 4: com_pos=3757 → cur=52mA > 50mA
-                    → 너무 구부림 → u_bound=3758
+                   → 너무 구부림 → u_bound=3758
             
             반복 5: com_pos=3635 → cur=49mA < 50mA
-                    → l_bound=3636, 범위=122
+                   → l_bound=3636, 범위=122
             
             ...
             
@@ -831,8 +555,8 @@ class HandCalibrator:
             print(f"    반복 {iteration}: 위치 {com_pos}로 이동 중... ", end='', flush=True)
             time.sleep(t)
             
-            # 현재 전류 측정 (재시도 메커니즘 적용)
-            cur = self.hand.robust_read_single_cur(motor_id)
+            # 현재 전류 측정
+            cur = self.hand.read_single_cur(motor_id)
             
             # 실제 도달 위치 읽기 (명령 위치와 다를 수 있음)
             pres_pos = int(self._safe_read_pos()[motor_id - 1])
@@ -1074,12 +798,12 @@ class HandCalibrator:
         
         방향 계수 (f):
         - 오른손: f = +1
-            - 위/오른쪽 화살표: 모터 값 증가 (손가락 구부림)
-            - 아래/왼쪽 화살표: 모터 값 감소 (손가락 펼침)
+          - 위/오른쪽 화살표: 모터 값 증가 (손가락 구부림)
+          - 아래/왼쪽 화살표: 모터 값 감소 (손가락 펼침)
         
         - 왼손: f = -1
-            - 위/오른쪽 화살표: 모터 값 감소 (손가락 구부림)
-            - 아래/왼쪽 화살표: 모터 값 증가 (손가락 펼침)
+          - 위/오른쪽 화살표: 모터 값 감소 (손가락 구부림)
+          - 아래/왼쪽 화살표: 모터 값 증가 (손가락 펼침)
         
         조정 순서:
         1. 대상 모터를 초기 tension 위치로 이동

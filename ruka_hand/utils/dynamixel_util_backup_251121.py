@@ -523,14 +523,6 @@ class DynamixelClient:
             print(f"    ✗ {error_msg}")
             raise OSError(error_msg)
         
-        # 3단계: Packet Timeout 설정 (통신 안정성 향상)
-        # 기본값보다 긴 100ms로 설정하여 느린 응답도 처리 가능
-        # 특히 57600 bps에서는 응답 시간이 더 길어질 수 있음
-        print(f"  [3/3] Packet Timeout 설정 중...")
-        self.port_handler.setPacketTimeout(100)  # 100ms
-        print(f"    ✓ Packet Timeout: 100ms")
-        logging.info("Set packet timeout to 100ms")
-        
         print(f"  ✓ 연결 완료!\n")
     
     def disconnect(self):
@@ -637,110 +629,6 @@ class DynamixelClient:
                 "연결되지 않음. connect()를 먼저 호출하세요.\n"
                 "또는 lazy_connect=True로 설정하세요."
             )
-    
-    def _retry_communication(self, func, max_retries=3, retry_delay=0.05, context=""):
-        """
-        통신 실패 시 자동으로 재시도하는 헬퍼 메서드
-        
-        이 메서드는 Dynamixel 통신의 안정성을 높이기 위해 실패한 통신을
-        자동으로 재시도합니다. 케이블 품질, 노이즈, 일시적 통신 오류 등으로
-        인한 실패를 복구할 수 있습니다.
-        
-        Args:
-            func (callable): 실행할 통신 함수
-            max_retries (int): 최대 재시도 횟수 (기본값: 3)
-            retry_delay (float): 재시도 전 대기 시간(초) (기본값: 0.05 = 50ms)
-            context (str): 디버깅용 컨텍스트 정보 (예: "read_position")
-        
-        Returns:
-            통신 함수의 반환값 (성공 시)
-        
-        Raises:
-            Exception: 모든 재시도 실패 시 마지막 에러 발생
-        
-        동작 원리:
-        1. 통신 함수 실행 시도
-        2. 성공 시: 즉시 결과 반환
-        3. 실패 시:
-           - retry_delay만큼 대기 (50ms)
-           - 재시도 카운터 증가
-           - 다시 시도
-        4. max_retries 초과 시: 마지막 에러 발생
-        
-        적용 사례:
-        - sync_read 실패 시
-        - sync_write 실패 시
-        - single_read 실패 시
-        - 일시적 통신 오류
-        
-        사용 예시:
-            # 직접 호출
-            result = self._retry_communication(
-                lambda: self.sync_read(...),
-                context="read_positions"
-            )
-            
-            # 함수 내부에서 사용
-            def read_pos(self):
-                return self._retry_communication(
-                    lambda: self.sync_read(...),
-                    max_retries=3,
-                    context="read_pos"
-                )
-        
-        성능 영향:
-        - 성공 시: 오버헤드 없음
-        - 1회 실패 후 성공: +50ms
-        - 2회 실패 후 성공: +100ms
-        - 3회 모두 실패: +150ms + 에러
-        
-        통신 안정성 향상:
-        - BAUDRATE 57600 사용 시 특히 효과적
-        - 긴 케이블 사용 시 필수
-        - 노이즈가 많은 환경에서 유용
-        
-        주의사항:
-        - 재시도 간격을 너무 짧게 하면 오히려 역효과
-        - 재시도 횟수를 너무 많이 하면 응답 지연 증가
-        - calibration처럼 시간이 걸리는 작업에는 적합
-        - 실시간 제어에서는 재시도 횟수 줄일 것 권장
-        """
-        last_error = None
-        
-        for attempt in range(max_retries + 1):  # 0부터 max_retries까지 (총 max_retries+1번)
-            try:
-                # 통신 함수 실행
-                result = func()
-                
-                # 성공 시 결과 반환
-                if attempt > 0:
-                    # 재시도 후 성공한 경우에만 로깅
-                    logging.info(
-                        f"[Retry Success] {context} - {attempt}번째 시도에서 성공"
-                    )
-                return result
-                
-            except Exception as e:
-                last_error = e
-                
-                # 마지막 시도가 아니면 재시도
-                if attempt < max_retries:
-                    logging.warning(
-                        f"[Retry {attempt+1}/{max_retries}] {context} 실패: {e} "
-                        f"- {retry_delay*1000:.0f}ms 후 재시도..."
-                    )
-                    time.sleep(retry_delay)
-                else:
-                    # 모든 재시도 실패
-                    logging.error(
-                        f"[Retry Failed] {context} - {max_retries}회 모두 실패: {e}"
-                    )
-        
-        # 모든 재시도 실패 시 마지막 에러 발생
-        raise Exception(
-            f"통신 실패 ({context}): {max_retries}회 재시도 후에도 실패\n"
-            f"마지막 에러: {last_error}"
-        )
     
     def reboot(self, retries: int = -1, retry_interval: float = 0.25):
         """
@@ -1492,18 +1380,16 @@ class DynamixelClient:
                 "Dynamixel %d has been successfully set position %d" % (motor_id, value)
             )
 
-    def single_write(self, motor_id, value, addr, max_retries=3):
+    def single_write(self, motor_id, value, addr):
         """
-        개별 모터에 2바이트 데이터 쓰기 (재시도 메커니즘 포함)
+        개별 모터에 2바이트 데이터 쓰기
         
         범용 쓰기 함수입니다. Control Table의 2바이트 레지스터에 사용합니다.
-        통신 실패 시 자동으로 최대 3회까지 재시도합니다.
         
         Args:
             motor_id (int): 대상 모터 ID
             value (int): 쓸 값 (0~65535)
             addr (int): Control Table 주소
-            max_retries (int): 최대 재시도 횟수 (기본값: 3)
         
         적용 사례:
         - PID 게인 설정 (P, I, D Gain)
@@ -1514,55 +1400,43 @@ class DynamixelClient:
             # P Gain 설정
             client.single_write(1, 450, ADDR_POSITION_P_GAIN)
             
-            # 속도 제한 설정 (재시도 5회)
-            client.single_write(1, 400, ADDR_PROFILE_VELOCITY, max_retries=5)
+            # 속도 제한 설정
+            client.single_write(1, 400, ADDR_PROFILE_VELOCITY)
         """
-        def _write_operation():
-            print(f"    [개별 Write 2B] 모터 #{motor_id} 주소 {addr}: {value}")
-            
-            dxl_comm_result, dxl_error = self.packet_handler.write2ByteTxRx(
-                self.port_handler, motor_id, addr, value
-            )
-            
-            print(f"      통신 결과: {dxl_comm_result}, 모터 에러: {dxl_error}")
-            
-            if dxl_comm_result != COMM_SUCCESS:
-                error_msg = self.packet_handler.getTxRxResult(dxl_comm_result)
-                print(f"      ✗ 통신 실패: {error_msg}")
-                raise Exception(f"통신 실패: {error_msg}")
-            elif dxl_error != 0:
-                error_msg = self.packet_handler.getRxPacketError(dxl_error)
-                print(f"      ✗ 모터 에러: {error_msg}")
-                raise Exception(f"모터 에러: {error_msg}")
-            else:
-                print(f"      ✓ 쓰기 성공")
-                logging.info(
-                    "Dynamixel %d has been successfully set value %d at addr %d" 
-                    % (motor_id, value, addr)
-                )
-                return True
+        print(f"    [개별 Write 2B] 모터 #{motor_id} 주소 {addr}: {value}")
         
-        # 재시도 메커니즘 적용
-        return self._retry_communication(
-            _write_operation,
-            max_retries=max_retries,
-            context=f"single_write(motor={motor_id}, addr={addr})"
+        dxl_comm_result, dxl_error = self.packet_handler.write2ByteTxRx(
+            self.port_handler, motor_id, addr, value
         )
+        
+        print(f"      통신 결과: {dxl_comm_result}, 모터 에러: {dxl_error}")
+        
+        if dxl_comm_result != COMM_SUCCESS:
+            error_msg = self.packet_handler.getTxRxResult(dxl_comm_result)
+            print(f"      ✗ 통신 실패: {error_msg}")
+            logging.error("%s" % error_msg)
+        elif dxl_error != 0:
+            error_msg = self.packet_handler.getRxPacketError(dxl_error)
+            print(f"      ✗ 모터 에러: {error_msg}")
+            logging.error("%s" % error_msg)
+        else:
+            print(f"      ✓ 쓰기 성공")
+            logging.info(
+                "Dynamixel %d has been successfully set gain %d" % (motor_id, value)
+            )
 
-    def single_read(self, motor_id, addr, max_retries=3):
+    def single_read(self, motor_id, addr):
         """
-        개별 모터에서 2바이트 데이터 읽기 (재시도 메커니즘 포함)
+        개별 모터에서 2바이트 데이터 읽기
         
         범용 읽기 함수입니다. Control Table의 2바이트 레지스터에 사용합니다.
-        통신 실패 시 자동으로 최대 3회까지 재시도합니다.
         
         Args:
             motor_id (int): 대상 모터 ID
             addr (int): Control Table 주소
-            max_retries (int): 최대 재시도 횟수 (기본값: 3)
         
         Returns:
-            int or None: 읽은 값 (0~65535), 모든 재시도 실패 시 None
+            int or None: 읽은 값 (0~65535), 실패 시 None
         
         적용 사례:
         - PID 게인 확인
@@ -1574,52 +1448,37 @@ class DynamixelClient:
             p_gain = client.single_read(1, ADDR_POSITION_P_GAIN)
             print(f"P Gain: {p_gain}")
             
-            # 온도 확인 (재시도 5회)
-            temp = client.single_read(1, ADDR_PRESENT_TEMPERATURE, max_retries=5)
+            # 온도 확인
+            temp = client.single_read(1, ADDR_PRESENT_TEMPERATURE)
             print(f"온도: {temp}도")
         """
-        def _read_operation():
-            value, result, error = self.packet_handler.read2ByteTxRx(
-                self.port_handler, motor_id, addr
-            )
-            
-            if result != COMM_SUCCESS:
-                error_msg = self.packet_handler.getTxRxResult(result)
-                print(f"      ✗ 주소 {addr} 읽기 실패: {error_msg}")
-                raise Exception(f"통신 실패: {error_msg}")
-            elif error != 0:
-                error_msg = self.packet_handler.getRxPacketError(error)
-                print(f"      ✗ 주소 {addr} 에러: {error_msg}")
-                raise Exception(f"모터 에러: {error_msg}")
-            else:
-                return value
+        value, result, error = self.packet_handler.read2ByteTxRx(
+            self.port_handler, motor_id, addr
+        )
         
-        # 재시도 메커니즘 적용
-        try:
-            return self._retry_communication(
-                _read_operation,
-                max_retries=max_retries,
-                context=f"single_read(motor={motor_id}, addr={addr})"
-            )
-        except Exception as e:
-            # 모든 재시도 실패 시 None 반환 (하위 호환성)
-            logging.error(f"single_read 완전 실패: {e}")
+        if result != COMM_SUCCESS:
+            error_msg = self.packet_handler.getTxRxResult(result)
+            print(f"      ✗ 주소 {addr} 읽기 실패: {error_msg}")
             return None
+        elif error != 0:
+            error_msg = self.packet_handler.getRxPacketError(error)
+            print(f"      ✗ 주소 {addr} 에러: {error_msg}")
+            return None
+        else:
+            return value
 
-    def read_single_cur(self, motor_id, max_retries=3):
+    def read_single_cur(self, motor_id):
         """
-        개별 모터의 현재 전류 읽기 (부호 있는 정수로 변환, 재시도 메커니즘 포함)
+        개별 모터의 현재 전류 읽기 (부호 있는 정수로 변환)
         
         단일 모터의 전류만 읽을 때 사용합니다.
         여러 모터를 읽을 때는 read_cur() 사용 권장.
-        통신 실패 시 자동으로 최대 3회까지 재시도합니다.
         
         Args:
             motor_id (int): 대상 모터 ID
-            max_retries (int): 최대 재시도 횟수 (기본값: 3)
         
         Returns:
-            int or None: 현재 전류 (mA), 모든 재시도 실패 시 None
+            int or None: 현재 전류 (mA), 실패 시 None
                         양수: 모터가 힘을 내는 방향
                         음수: 모터가 힘을 받는 방향
         
@@ -1629,49 +1488,36 @@ class DynamixelClient:
             if current is not None:
                 print(f"전류: {current} mA")
                 
-            # 과부하 모니터링 (재시도 5회)
+            # 과부하 모니터링
             while True:
-                current = client.read_single_cur(1, max_retries=5)
-                if current is not None and abs(current) > 500:
+                current = client.read_single_cur(1)
+                if abs(current) > 500:
                     print("과부하 감지!")
                     break
                 time.sleep(0.1)
         """
-        def _read_current_operation():
-            # 2바이트 읽기
-            value, result, error = self.packet_handler.read2ByteTxRx(
-                self.port_handler, motor_id, ADDR_PRESENT_CURRENT
-            )
-            
-            if result != COMM_SUCCESS:
-                error_msg = self.packet_handler.getTxRxResult(result)
-                print(
-                    f"      ✗ 전류 읽기 실패 (주소 {ADDR_PRESENT_CURRENT}): {error_msg}"
-                )
-                raise Exception(f"통신 실패: {error_msg}")
-            elif error != 0:
-                error_msg = self.packet_handler.getRxPacketError(error)
-                print(
-                    f"      ✗ 전류 읽기 에러 (주소 {ADDR_PRESENT_CURRENT}): {error_msg}"
-                )
-                raise Exception(f"모터 에러: {error_msg}")
-            else:
-                # 부호 있는 정수로 변환
-                # 16비트 부호 있는: -32768 ~ 32767
-                signed_value = value - 65536 if value >= 32768 else value
-                return signed_value
+        # 2바이트 읽기
+        value, result, error = self.packet_handler.read2ByteTxRx(
+            self.port_handler, motor_id, ADDR_PRESENT_CURRENT
+        )
         
-        # 재시도 메커니즘 적용
-        try:
-            return self._retry_communication(
-                _read_current_operation,
-                max_retries=max_retries,
-                context=f"read_single_cur(motor={motor_id})"
+        if result != COMM_SUCCESS:
+            error_msg = self.packet_handler.getTxRxResult(result)
+            print(
+                f"      ✗ 전류 읽기 실패 (주소 {ADDR_PRESENT_CURRENT}): {error_msg}"
             )
-        except Exception as e:
-            # 모든 재시도 실패 시 None 반환 (하위 호환성)
-            logging.error(f"read_single_cur 완전 실패: {e}")
             return None
+        elif error != 0:
+            error_msg = self.packet_handler.getRxPacketError(error)
+            print(
+                f"      ✗ 전류 읽기 에러 (주소 {ADDR_PRESENT_CURRENT}): {error_msg}"
+            )
+            return None
+        else:
+            # 부호 있는 정수로 변환
+            # 16비트 부호 있는: -32768 ~ 32767
+            signed_value = value - 65536 if value >= 32768 else value
+            return signed_value
 
     # =============================================================================
     # Context Manager 지원
