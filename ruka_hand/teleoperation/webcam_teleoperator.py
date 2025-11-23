@@ -26,7 +26,7 @@ import numpy as np
 import time
 from scipy.spatial.transform import Rotation
 
-from HandTrackingModule import HandDetector
+from gesture_ctrled_ruka.HandTrackingModule import HandDetector
 from ruka_hand.control.operator import RUKAOperator
 from ruka_hand.utils.constants import *
 from ruka_hand.utils.timer import FrequencyTimer
