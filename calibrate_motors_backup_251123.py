@@ -787,29 +787,22 @@ class HandCalibrator:
             print(f"MOTOR {motor_id} - 상세 디버그 정보")
             print(f"{'='*70}")
         
-        # ===== 개선사항: 현재 위치 기반 캘리브레이션 =====
-        # 현재 모터 위치 읽기
-        current_positions = self._safe_read_pos()
-        start_pos = int(current_positions[motor_id - 1])
-        
-        print(f"  현재 위치: {start_pos}")
-        
-        # 오른손/왼손에 따른 방향 설정 및 안전한 탐색 범위 설정
+        # 오른손/왼손에 따른 초기 설정
         if self.hand.hand_type == "right":
+            start_pos = 100      # 오른손 시작 위치 (펼친 상태)
             f = 1                # 방향 계수: +1 (증가 = 구부림)
-            # 오른손: 현재 위치에서 증가 방향으로 탐색
-            l_bound = max(start_pos - 200, 100)    # 현재 위치 -200 (안전 마진)
-            u_bound = min(start_pos + 1500, 3995)  # 현재 위치 +1500 (최대 탐색 범위)
             print(f"  손 방향: 오른손 (모터 값 증가 = 구부림)")
         elif self.hand.hand_type == "left":
+            start_pos = 4000     # 왼손 시작 위치 (펼친 상태)
             f = -1               # 방향 계수: -1 (감소 = 구부림)
-            # 왼손: 현재 위치에서 감소 방향으로 탐색
-            l_bound = max(start_pos - 1500, 100)   # 현재 위치 -1500 (최대 탐색 범위)
-            u_bound = min(start_pos + 200, 3995)   # 현재 위치 +200 (안전 마진)
             print(f"  손 방향: 왼손 (모터 값 감소 = 구부림)")
         
-        # 다른 모터는 현재 위치 유지
-        pos = current_positions.copy()
+        # 이진 탐색 범위 초기화
+        l_bound = 100    # 하한 (안전 마진)
+        u_bound = 4000   # 상한 (12비트 해상도의 최대값 4095에서 마진)
+        
+        # 모든 모터를 시작 위치로 초기화
+        pos = np.array([start_pos] * 11, dtype=np.int32)
         
         # 초기 전류값 (큰 값으로 설정하여 루프 진입 보장)
         cur = 1000000
