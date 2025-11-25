@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from ruka_hand.utils.file_ops import get_repo_root
 
 # controlTable.html taken from https://emanual.robotis.com/docs/en/dxl/x/xl330-m288/#model-information (just the EEPROM and RAM <table> elements)
-with open(f"{get_repo_root()}/ruka_hand/utils/assets/controlTable.html") as fp:
+with open(f"{get_repo_root()}/ruka_hand/utils/assets/controlTable.html", encoding='utf-8') as fp:
     soup = BeautifulSoup(fp, "html.parser")
 
 data = []

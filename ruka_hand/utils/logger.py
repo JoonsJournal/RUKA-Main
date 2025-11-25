@@ -22,7 +22,7 @@ class Logger:
         if type(msg) is dict:
             self.wandb_logger.log(msg)
 
-        with open(self.logger_file, "a") as f:
+        with open(self.logger_file, "a", encoding='utf-8') as f:
             f.write("{}\n".format(msg))
 
     def log_metrics(self, metrics, time_step, time_step_name):

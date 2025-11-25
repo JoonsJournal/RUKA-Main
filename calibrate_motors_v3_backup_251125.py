@@ -3,17 +3,11 @@
 
 """
 ================================================================================
-RUKA Robot Hand Motor Calibration - 로봇 손 모터 캘리브레이션 프로그램 (v3.0 Modified)
+RUKA Robot Hand Motor Calibration - 로봇 손 모터 캘리브레이션 프로그램 (v3.0)
 ================================================================================
 
 이 프로그램은 RUKA(로봇 손)의 모터 동작 범위를 측정하고 저장하는
 캘리브레이션 프로그램입니다.
-
-================================================================================
-수정 사항 (Modified Version)
-================================================================================
-- 각 모터 캘리브레이션 완료 후 tension_limit(펴진 위치)에서 대기
-- 기존: 중간값 위치 대기 → 수정: 펴진 위치 대기
 
 ================================================================================
 버전 히스토리
@@ -22,7 +16,6 @@ v0.x (Original) - Linux 전용, 기본 기능
 v1.x (Windows Port) - Windows 지원, 상세 주석, 에러 처리 개선
 v2.0 (Enhanced) - 모터별 프로파일, 백업, 메타데이터, 적응형 임계값
 v3.0 (Bidirectional) - 현재 버전, 양방향 탐색 방식
-v3.0-mod - tension_limit 대기 수정
 
 ================================================================================
 v3.0 주요 개선 사항 (v2 대비)
@@ -62,17 +55,17 @@ motor_limits/
 사용 방법
 ================================================================================
 # 양방향 자동 캘리브레이션 (권장, v3 신규)
-python calibrate_motors_v3_modified.py --hand-type right --mode both-auto
+python calibrate_motors_v3.py --hand-type right --mode both-auto
 
 # 기존 방식 (대화형 tension 조정)
-python calibrate_motors_v3_modified.py -ht right -m both
+python calibrate_motors_v3.py -ht right -m both
 
 # Curl만 측정
-python calibrate_motors_v3_modified.py -ht left -m curl
+python calibrate_motors_v3.py -ht left -m curl
 
 ================================================================================
 작성: NYU RUKA Team
-버전: 3.0-modified (Bidirectional with Tension Wait)
+버전: 3.0 (Bidirectional Search)
 라이선스: MIT License
 ================================================================================
 """
@@ -364,7 +357,7 @@ class CalibrationDataManager:
 
 class HandCalibrator:
     """
-    RUKA Robot Hand 캘리브레이션 클래스 (v3.0-modified)
+    RUKA Robot Hand 캘리브레이션 클래스 (v3.0)
     
     v3 주요 개선:
     ┌────────────────────────────────────────────────────────────────────┐
@@ -372,7 +365,6 @@ class HandCalibrator:
     │  2. 하이브리드 탐색 (coarse → fine)                               │
     │  3. 안전한 복귀 전략 (curl 후 start_pos 복귀)                     │
     │  4. curl/tension 동시 자동 측정                                   │
-    │  5. [수정] tension_limit(펴진 위치)에서 대기                      │
     └────────────────────────────────────────────────────────────────────┘
     """
 
@@ -386,7 +378,7 @@ class HandCalibrator:
     ):
         """HandCalibrator 초기화"""
         logger.info(f"\n{'='*70}")
-        logger.info("HandCalibrator 초기화 시작 (v3.0-modified - Tension Wait)")
+        logger.info("HandCalibrator 초기화 시작 (v3.0 - Bidirectional)")
         logger.info(f"{'='*70}")
         
         # Hand 객체 생성
@@ -744,13 +736,12 @@ class HandCalibrator:
 
     def find_both_limits(self, motor_id: int) -> Tuple[int, int]:
         """
-        양방향 limit 탐색 (v3 핵심 메서드 - 수정됨)
+        양방향 limit 탐색 (v3 핵심 메서드)
         
         현재 위치에서 시작하여:
         1. 움켜지는 방향 → curl_limit 찾기
         2. start_pos로 복귀
         3. 펴지는 방향 → tension_limit 찾기
-        4. [수정] tension_limit에서 대기
         
         이점:
         ┌────────────────────────────────────────────────────────────────────┐
@@ -758,7 +749,6 @@ class HandCalibrator:
         │  - 안전성: 점진적 움직임, 갑작스러운 변화 없음                    │
         │  - 효율성: curl/tension 한 번에 측정                              │
         │  - 정확성: 하이브리드 탐색으로 정밀도 확보                        │
-        │  - [수정] 펴진 상태 유지: tension_limit에서 다음 모터 대기       │
         └────────────────────────────────────────────────────────────────────┘
         
         Args:
@@ -862,12 +852,13 @@ class HandCalibrator:
         print(f"\n  ✓ TENSION limit: {tension_limit}")
         
         # =====================================================================
-        # 완료: 펴진 위치(tension limit)로 이동하여 대기 [수정됨]
+        # 완료: 안전한 중간 위치로 복귀
         # =====================================================================
-        print(f"\n  펴진 위치(tension limit)로 이동: {tension_limit}")
+        safe_pos = (curl_limit + tension_limit) // 2
+        print(f"\n  안전 위치로 복귀: {safe_pos} (중간값)")
         
         current_positions = self._safe_read_pos()
-        current_positions[motor_id - 1] = tension_limit
+        current_positions[motor_id - 1] = safe_pos
         self._safe_set_pos(current_positions)
         time.sleep(0.5)
         
@@ -879,7 +870,6 @@ class HandCalibrator:
         print(f"    CURL limit:   {curl_limit}")
         print(f"    TENSION limit:{tension_limit}")
         print(f"    동작 범위:    {abs(curl_limit - tension_limit)} steps")
-        print(f"    대기 위치:    {tension_limit} (펴진 상태)")
         
         return curl_limit, tension_limit
 
@@ -947,12 +937,11 @@ class HandCalibrator:
             Tuple[np.ndarray, np.ndarray]: (curl_limits, tension_limits)
         """
         print("\n" + "="*70)
-        print("[양방향 자동 캘리브레이션 시작] (v3-modified)")
+        print("[양방향 자동 캘리브레이션 시작] (v3)")
         print("="*70)
         print(f"\n  총 모터 수: {len(self.motor_ids)}개")
         print(f"  다중 측정: {MULTI_SAMPLE_COUNT}회")
         print(f"  하이브리드 탐색: Coarse({COARSE_STEP}) → Fine({FINE_STEP})")
-        print(f"  대기 위치: tension_limit (펴진 상태)")
         print(f"  예상 소요 시간: 약 15-30분")
         
         curl_limits = np.zeros(len(self.motor_ids), dtype=np.int32)
@@ -1101,14 +1090,13 @@ class HandCalibrator:
         """메타데이터 수집"""
         metadata = {
             "timestamp": datetime.now().isoformat(),
-            "version": "3.0-modified",
+            "version": "3.0",
             "hand_type": self.hand.hand_type,
             "motor_ids": self.motor_ids,
             "curr_lim": self.curr_lim,
             "coarse_step": COARSE_STEP,
             "fine_step": FINE_STEP,
             "multi_sample_count": MULTI_SAMPLE_COUNT,
-            "wait_position": "tension_limit",
             "motor_profiles": {},
         }
         
@@ -1132,7 +1120,7 @@ class HandCalibrator:
         curl과 tension을 자동으로 동시에 측정하고 저장합니다.
         """
         print("\n" + "="*70)
-        print("[양방향 자동 캘리브레이션] (v3-modified)")
+        print("[양방향 자동 캘리브레이션] (v3)")
         print("="*70)
         
         try:
@@ -1269,22 +1257,23 @@ def parse_args():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description="RUKA Robot Hand Motor Calibration (v3.0-modified - Tension Wait)",
+        description="RUKA Robot Hand Motor Calibration (v3.0 - Bidirectional)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 사용 예시:
   # 양방향 자동 캘리브레이션 (권장)
-  python calibrate_motors_v3_modified.py --hand-type right --mode both-auto
+  python calibrate_motors_v3.py --hand-type right --mode both-auto
   
   # 기존 방식 (대화형 tension 조정)
-  python calibrate_motors_v3_modified.py -ht right -m both
+  python calibrate_motors_v3.py -ht right -m both
   
   # Curl만 측정
-  python calibrate_motors_v3_modified.py -ht left -m curl
+  python calibrate_motors_v3.py -ht left -m curl
 
-v3-modified 변경사항:
-  - 각 모터 캘리브레이션 완료 후 tension_limit(펴진 위치)에서 대기
-  - 기존: 중간값 대기 → 수정: 펴진 상태 유지
+v3 신규 기능:
+  - both-auto 모드: curl과 tension 자동 동시 측정
+  - 하이브리드 탐색: coarse → fine 2단계 탐색
+  - 양방향 탐색: 현재 위치 기준 curl/tension 순차 탐색
         """
     )
     
@@ -1348,11 +1337,10 @@ v3-modified 변경사항:
 
 if __name__ == "__main__":
     print("\n" + "="*70)
-    print("RUKA Robot Hand Motor Calibration (v3.0-modified - Tension Wait)")
+    print("RUKA Robot Hand Motor Calibration (v3.0 - Bidirectional)")
     print("="*70)
     print("\nCopyright (c) NYU RUKA Team")
-    print("License: MIT License")
-    print("\n[수정사항] 각 모터 캘리브레이션 완료 후 tension_limit에서 대기\n")
+    print("License: MIT License\n")
     
     try:
         # 명령줄 인자 파싱
@@ -1364,7 +1352,6 @@ if __name__ == "__main__":
         print(f"    다중 측정: {args.multi_sample}회")
         print(f"    Coarse 스텝: {args.coarse_step}")
         print(f"    Fine 스텝: {args.fine_step}")
-        print(f"    대기 위치: TENSION_LIMIT (펴진 상태)")
         
         # 전역 설정 업데이트
         MULTI_SAMPLE_COUNT = args.multi_sample

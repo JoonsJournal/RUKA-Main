@@ -47,7 +47,7 @@ class Workspace:
         print(
             f"OUTPUT DIM: {self.cfg.net.output_dim}, INPUT DIM: {self.cfg.net.input_dim}"
         )
-        with open(f"{self.hydra_dir}/.hydra/config.yaml", "w") as f:
+        with open(f"{self.hydra_dir}/.hydra/config.yaml", "w", encoding='utf-8') as f:
             OmegaConf.save(
                 self.cfg, f
             )  # Save the input / output dim to the config so that you can load it directly

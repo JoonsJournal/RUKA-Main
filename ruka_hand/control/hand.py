@@ -452,7 +452,7 @@ class Hand:
             print(f"\n  → 오른손 캘리브레이션 로드 중...")
             
             # Curl Limits 로드 시도
-            curl_path = f"{repo_root}/curl_limits/right_curl_limits.npy"
+            curl_path = f"{repo_root}/motor_limits/right_curl_limits.npy"
             if os.path.exists(curl_path):
                 try:
                     self.curled_bound = np.load(curl_path)
@@ -471,7 +471,7 @@ class Hand:
                 self.curled_bound = np.ones(11) * MOTOR_RANGES_RIGHT
             
             # Tension Limits 로드 시도
-            tens_path = f"{repo_root}/curl_limits/right_tension_limits.npy"
+            tens_path = f"{repo_root}/motor_limits/right_tension_limits.npy"
             if os.path.exists(tens_path):
                 try:
                     self.tensioned_pos = np.load(tens_path)
@@ -498,7 +498,7 @@ class Hand:
             print(f"\n  → 왼손 캘리브레이션 로드 중...")
             
             # Curl Limits 로드 시도
-            curl_path = f"{repo_root}/curl_limits/left_curl_limits.npy"
+            curl_path = f"{repo_root}/motor_limits/left_curl_limits.npy"
             if os.path.exists(curl_path):
                 try:
                     self.curled_bound = np.load(curl_path)
@@ -517,7 +517,7 @@ class Hand:
                 self.curled_bound = 4000 - np.ones(11) * MOTOR_RANGES_LEFT
             
             # Tension Limits 로드 시도
-            tens_path = f"{repo_root}/curl_limits/left_tension_limits.npy"
+            tens_path = f"{repo_root}/motor_limits/left_tension_limits.npy"
             if os.path.exists(tens_path):
                 try:
                     self.tensioned_pos = np.load(tens_path)
