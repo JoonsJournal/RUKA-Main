@@ -7,9 +7,9 @@ WebCam Teleoperator - MediaPipe 기반 RUKA 로봇 손 원격조정
 이 모듈은 웹캠과 MediaPipe를 사용하여 RUKA 로봇 손을 실시간으로 제어합니다.
 주요 기능:
 1. 웹캠에서 손 추적 (MediaPipe Hands)
-2. 21개 랜드마크를 로봇 제어 데이터로 변환
-3. Oculus 텔레오퍼레이터와 동일한 좌표계 변환 로직 사용
-4. 실시간 로봇 손 제어
+1. 21개 랜드마크를 로봇 제어 데이터로 변환
+1. Oculus 텔레오퍼레이터와 동일한 좌표계 변환 로직 사용
+1. 실시간 로봇 손 제어
 작성자: 이동준
 """
 
@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from HandTrackingModule import HandDetector
+from gesture_ctrled_ruka.HandTrackingModule import HandDetector
 from ruka_hand.control.operator import RUKAOperator
 from ruka_hand.utils.constants import *
 from ruka_hand.utils.timer import FrequencyTimer
@@ -35,11 +35,11 @@ from ruka_hand.utils.vectorops import *
 # 목표: 각 손가락마다 5개 관절 (손목 포함) → (5, 5, 3) 형태
 
 MEDIAPIPE_FINGER_INDICES = {
-	"thumb": [0, 1, 2, 3, 4],    # 손목 + 엄지 4개
-	"index": [0, 5, 6, 7, 8],    # 손목 + 검지 4개
-	"middle": [0, 9, 10, 11, 12], # 손목 + 중지 4개
-	"ring": [0, 13, 14, 15, 16],  # 손목 + 약지 4개
-	"pinky": [0, 17, 18, 19, 20], # 손목 + 새끼 4개
+    "thumb": [0, 1, 2, 3, 4],    # 손목 + 엄지 4개
+    "index": [0, 5, 6, 7, 8],    # 손목 + 검지 4개
+    "middle": [0, 9, 10, 11, 12], # 손목 + 중지 4개
+    "ring": [0, 13, 14, 15, 16],  # 손목 + 약지 4개
+    "pinky": [0, 17, 18, 19, 20], # 손목 + 새끼 4개
 }
 
 # =============================================================================
@@ -51,14 +51,6 @@ class WebCamTeleoperator:
 	웹캠 기반 RUKA 로봇 손 원격조정 클래스
 	MediaPipe로 손을 추적하고 Oculus 텔레오퍼레이터와 동일한
 	좌표계 변환을 적용하여 로봇 손을 제어합니다.
-	
-	⚠️  거울 모드 주의사항:
-	웹캠은 거울처럼 작동하므로, MediaPipe가 인식하는 손 방향과 
-	실제 사용자의 손 방향이 반대입니다:
-	- 사용자의 오른손 → MediaPipe는 "Left"로 인식 → 코드에서 "right"로 변환
-	- 사용자의 왼손 → MediaPipe는 "Right"로 인식 → 코드에서 "left"로 변환
-	
-	이 변환은 _process_frame() 메서드에서 자동으로 처리됩니다.
 	"""
 
 	def __init__(
@@ -69,7 +61,6 @@ class WebCamTeleoperator:
 		hands=["left", "right"],
 		detection_confidence=0.7,
 		tracking_confidence=0.7,
-		debug=False,
 	):
 		"""
 		WebCamTeleoperator 초기화
@@ -88,12 +79,7 @@ class WebCamTeleoperator:
 			MediaPipe 손 검출 신뢰도 (0.0~1.0)
 		tracking_confidence : float
 			MediaPipe 손 추적 신뢰도 (0.0~1.0)
-		debug : bool
-			디버그 모드 활성화 (기본값: False)
 		"""
-		
-		# 디버그 모드
-		self.debug = debug
 		
 		# 타이머 초기화
 		self.timer = FrequencyTimer(frequency)
@@ -130,7 +116,6 @@ class WebCamTeleoperator:
 		print(f"카메라 ID: {camera_id}")
 		print(f"제어 주파수: {frequency} Hz")
 		print(f"제어 대상: {hands}")
-		print(f"디버그 모드: {'ON' if debug else 'OFF'}")
 		print("=" * 60)
 
 	def _init_hands(self):
@@ -278,10 +263,9 @@ class WebCamTeleoperator:
 		"""
 		if hand_name in self.hands.keys():
 			try:
-				if self.debug:
-					print(f"[DEBUG] {hand_name} 손 제어 시작")
-					print(f"[DEBUG] 변환된 좌표 형태: {transformed_hand_coords.shape}")
-					print(f"[DEBUG] 변환된 좌표 범위: min={transformed_hand_coords.min():.2f}, max={transformed_hand_coords.max():.2f}")
+				print(f"[DEBUG] {hand_name} 손 제어 시작")
+				print(f"[DEBUG] 변환된 좌표 형태: {transformed_hand_coords.shape}")
+				print(f"[DEBUG] 변환된 좌표 범위: min={transformed_hand_coords.min():.2f}, max={transformed_hand_coords.max():.2f}")
 				
 				# 이동평균 필터 적용
 				transformed_hand_coords = moving_average(
@@ -290,20 +274,15 @@ class WebCamTeleoperator:
 					self.moving_average_limit,
 				)
 				
-				if self.debug:
-					print(f"[DEBUG] 필터링 후 좌표 범위: min={transformed_hand_coords.min():.2f}, max={transformed_hand_coords.max():.2f}")
+				print(f"[DEBUG] 필터링 후 좌표 범위: min={transformed_hand_coords.min():.2f}, max={transformed_hand_coords.max():.2f}")
 				
 				# 로봇 제어 명령
 				self.hands[hand_name].step(transformed_hand_coords)
-				
-				if self.debug:
-					print(f"[DEBUG] {hand_name} 손 제어 명령 전송 완료")
-					
+				print(f"[DEBUG] {hand_name} 손 제어 명령 전송 완료")
 			except Exception as e:
 				print(f"[WARNING] {hand_name} 손 처리 실패: {e}")
-				if self.debug:
-					import traceback
-					traceback.print_exc()
+				import traceback
+				traceback.print_exc()
 
 	def _process_frame(self, img):
 		"""
@@ -326,38 +305,26 @@ class WebCamTeleoperator:
 		hand_data = {}
 		
 		if hands:
-			if self.debug:
-				print(f"[DEBUG] 감지된 손 개수: {len(hands)}")
-				
+			print(f"[DEBUG] 감지된 손 개수: {len(hands)}")
 			for hand in hands:
-				# MediaPipe 손 타입 (카메라 관점)
-				mp_hand_type = hand["type"].lower()  # "Left" or "Right" → "left" or "right"
-				
-				# 🔄 거울 모드 보정: 좌우 반전
-				# 사용자의 실제 오른손 = 카메라에서는 "Left"로 인식됨
-				# 사용자의 실제 왼손 = 카메라에서는 "Right"로 인식됨
-				if mp_hand_type == "left":
-					hand_type = "right"  # 실제 오른손
-				else:
-					hand_type = "left"   # 실제 왼손
-				
+				hand_type = hand["type"].lower()  # "Left" or "Right" → "left" or "right"
 				lmList = hand["lmList"]  # 21개 랜드마크
 				
-				if self.debug:
-					print(f"[DEBUG] MediaPipe: {mp_hand_type} → 실제: {hand_type} 손 감지됨")
+				print(f"[DEBUG] {hand_type} 손 감지됨, 랜드마크 수: {len(lmList)}")
 				
 				# MediaPipe → (5, 5, 3) 형식 변환
 				finger_keypoints = self._mediapipe_to_finger_keypoints(lmList)
 				
-				if self.debug:
-					print(f"[DEBUG] {hand_type} 키포인트 형태: {finger_keypoints.shape}")
-					print(f"[DEBUG] {hand_type} 키포인트 범위: min={finger_keypoints.min():.2f}, max={finger_keypoints.max():.2f}")
+				print(f"[DEBUG] {hand_type} 키포인트 형태: {finger_keypoints.shape}")
+				print(f"[DEBUG] {hand_type} 키포인트 범위: min={finger_keypoints.min():.2f}, max={finger_keypoints.max():.2f}")
 				
 				# 미터 단위로 정규화 (픽셀 → 미터)
 				# 일반적으로 손 크기는 약 200픽셀 = 0.2미터
 				finger_keypoints = finger_keypoints / 1000.0
 				
 				hand_data[hand_type] = finger_keypoints
+		else:
+			print("[DEBUG] 손이 감지되지 않음")
 		
 		return hand_data, img
 
@@ -373,12 +340,12 @@ class WebCamTeleoperator:
 		# 손 검출 및 처리
 		hand_data, img = self._process_frame(img)
 		
-		if self.debug and hand_data:
-			print(f"[DEBUG] 처리된 손 데이터: {list(hand_data.keys())}")
+		print(f"[DEBUG] 처리된 손 데이터: {list(hand_data.keys())}")
 		
 		# 각 손에 대해 처리
 		for hand_name in self.hand_names:
 			if hand_name in hand_data:
+				print(f"[DEBUG] {hand_name} 손 변환 시작")
 				# 좌표계 변환
 				transformed_hand_coords, _ = self.transform_keypoints(
 					hand_data[hand_name], hand_name
@@ -386,6 +353,8 @@ class WebCamTeleoperator:
 				
 				# 로봇 제어
 				self._operate_hand(hand_name, transformed_hand_coords)
+			else:
+				print(f"[DEBUG] {hand_name} 손 데이터 없음")
 		
 		return img
 
@@ -445,18 +414,6 @@ class WebCamTeleoperator:
 						(0, 255, 255),
 						2
 					)
-					
-					# 디버그 모드 표시
-					if self.debug:
-						cv2.putText(
-							img,
-							"DEBUG MODE",
-							(10, img.shape[0] - 20),
-							cv2.FONT_HERSHEY_SIMPLEX,
-							0.6,
-							(0, 165, 255),
-							2
-						)
 					
 					# 화면 표시
 					cv2.imshow("WebCam Teleoperator - RUKA Hand", img)
@@ -524,7 +481,6 @@ def main():
 		hands=["left", "right"],        # 양손 제어
 		detection_confidence=0.7,       # 검출 신뢰도
 		tracking_confidence=0.7,        # 추적 신뢰도
-		debug=False,                    # 디버그 모드 OFF (프로덕션)
 	)
 
 	# 실행

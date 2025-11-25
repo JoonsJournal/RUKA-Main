@@ -69,7 +69,7 @@ class HandController:
         self.timer = FrequencyTimer(frequency * single_move_len)
         self.single_move_len = single_move_len
         self.past_observations = dict()
-        self.robot_stats = torch.FloatTensor([self.hand.min_lim, self.hand.max_lim])
+        self.robot_stats = torch.FloatTensor([self.hand.min_lim, self.hand.max_lim],axis=0)
 
     def _set_learner_dict(self, hand_type):
         self.checkpoint_dir = os.path.join(get_repo_root(), CHECKPOINT_DIR)

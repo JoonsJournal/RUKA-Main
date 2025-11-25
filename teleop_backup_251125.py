@@ -9,7 +9,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Teleop robot hands.")
 	parser.add_argument(
 		"-ht",
-		"--hand_type",
+		"--hand_type",  # 수정: en dash를 올바른 하이픈으로 변경
 		type=str,
 		help="Hand you'd like to teleoperate",
 		default="",
@@ -38,14 +38,6 @@ if __name__ == "__main__":
 		type=int,
 		help="Control frequency in Hz (default: 30 for webcam)",
 		default=None,
-	)
-
-	# 디버그 모드 옵션 추가
-	parser.add_argument(
-		"-d",
-		"--debug",
-		action="store_true",
-		help="Enable debug mode (verbose output)",
 	)
 
 	args = parser.parse_args()
@@ -81,7 +73,6 @@ if __name__ == "__main__":
 			hands=hands,
 			detection_confidence=0.7,
 			tracking_confidence=0.7,
-			debug=args.debug,  # 디버그 모드 전달
 		)
 		webcam_teleoperator.run()
 
